@@ -8,21 +8,21 @@ class TransactionUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Transaction UI")
-        self.root.geometry("800x600")  # Set the window size
+        self.root.geometry("900x700")
 
         # Define colors
         self.primary_color = "#3498db"
         self.secondary_color = "#2ecc71"
         self.text_color = "#ffffff"
-        self.frame_color = "#e74c3c"  # Modern color for the frame
+        self.frame_color = "#e74c3c"
 
         # Load logo from web
-        logo_url = "https://portal.cin.ufpe.br/wp-content/uploads/2023/06/selo_oficial_6.png"  # Replace with your logo URL
+        logo_url = "https://portal.cin.ufpe.br/wp-content/uploads/2023/06/selo_oficial_6.png"
         response = requests.get(logo_url)
         image = Image.open(BytesIO(response.content))
 
         # Resize the image to a smaller size
-        width, height = 100, 100  # Change these values to the desired dimensions
+        width, height = 100, 100
         resized_image = image.resize((width, height))
 
         self.logo = ImageTk.PhotoImage(resized_image)
@@ -39,7 +39,7 @@ class TransactionUI:
         self.selected_transaction.set("Select Transaction")
 
         self.selected_protocol = tk.StringVar()
-        self.selected_protocol.set("Normal")
+        self.selected_protocol.set("Wait-Die")
 
         self.selected_operations = []
 
@@ -49,26 +49,26 @@ class TransactionUI:
     def create_widgets(self):
         # Logo
         logo_label = ttk.Label(self.root, image=self.logo)
-        logo_label.grid(row=0, column=0, columnspan=2, pady=10)
+        logo_label.grid(row=0, column=0, columnspan=3, pady=10)
 
         # Combo box to select transactions
         transaction_frame = tk.Frame(self.root, bg=self.secondary_color)
-        transaction_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10)
+        transaction_frame.grid(row=1, column=0, columnspan=3, padx=10, pady=10)
         self.transaction_combo = ttk.Combobox(transaction_frame, textvariable=self.selected_transaction, values=[t["name"] for t in self.transactions], state="readonly")
         self.transaction_combo.pack(pady=10)
         self.transaction_combo.bind("<<ComboboxSelected>>", self.show_transaction_operations)
 
         # Message display
         message_label = tk.Label(self.root, text="Message Display", bg=self.primary_color, fg=self.text_color)
-        message_label.grid(row=2, column=0, columnspan=2, padx=10, pady=(0, 5))
-        self.message_display = tk.Text(self.root, height=10, width=40)
-        self.message_display.grid(row=3, column=0, columnspan=2, padx=10, pady=(0, 5))
+        message_label.grid(row=2, column=0, columnspan=3, padx=10, pady=(0, 5))
+        self.message_display = tk.Text(self.root, height=10, width=80)
+        self.message_display.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 5))
 
         # Protocol combo box
         protocol_frame = tk.Frame(self.root, bg=self.secondary_color)
-        protocol_frame.grid(row=1, column=2, padx=10, pady=10)
+        protocol_frame.grid(row=1, column=3, padx=10, pady=10)
         ttk.Label(protocol_frame, text="Protocol").pack(pady=5)
-        self.protocol_combo = ttk.Combobox(protocol_frame, textvariable=self.selected_protocol, values=["Normal", "Wait-Die", "Wound-Lock"], state="readonly")
+        self.protocol_combo = ttk.Combobox(protocol_frame, textvariable=self.selected_protocol, values=["Wait-Die", "Wound-Wait"], state="readonly")
         self.protocol_combo.pack(pady=5)
 
         # Buttons
@@ -76,6 +76,8 @@ class TransactionUI:
         add_button.grid(row=4, column=0, padx=5, pady=5)
         commit_button = ttk.Button(self.root, text="Commit", command=self.commit_transactions)
         commit_button.grid(row=4, column=1, padx=5, pady=5)
+        clear_button = ttk.Button(self.root, text="Clear Display", command=self.clear_display)
+        clear_button.grid(row=4, column=2, padx=5, pady=5)
 
         # Log memory display
         log_memory_label = tk.Label(self.root, text="Log Memory", bg=self.primary_color, fg=self.text_color)
@@ -88,6 +90,12 @@ class TransactionUI:
         log_disk_label.grid(row=5, column=1, padx=10, pady=(0, 5))
         self.log_disk = tk.Text(self.root, height=10, width=40)
         self.log_disk.grid(row=6, column=1, padx=10, pady=(0, 5))
+
+        # Protocol behavior display
+        protocol_behavior_label = tk.Label(self.root, text="Protocol Behavior Display", bg=self.primary_color, fg=self.text_color)
+        protocol_behavior_label.grid(row=5, column=2, padx=10, pady=(0, 5))
+        self.protocol_behavior_display = tk.Text(self.root, height=10, width=40)
+        self.protocol_behavior_display.grid(row=6, column=2, padx=10, pady=(0, 5))
 
     def apply_custom_style(self):
         style = ttk.Style()
@@ -134,45 +142,56 @@ class TransactionUI:
         protocol = self.selected_protocol.get()
         deadlock_detected = self.detect_deadlock()
 
+        self.message_display.delete(1.0, tk.END)
+        self.protocol_behavior_display.delete(1.0, tk.END)
+
         if deadlock_detected:
-            if protocol == "Normal":
-                self.message_display.delete(1.0, tk.END)
-                self.message_display.insert(tk.END, "Transaction aborted, deadlock occurred\n")
-                self.selected_operations = []
-                self.log_memory.delete(1.0, tk.END)
-            elif protocol == "Wait-Die":
-                self.message_display.delete(1.0, tk.END)
+            if protocol == "Wait-Die":
                 self.message_display.insert(tk.END, "Wait-Die protocol selected\n")
-                recent_transaction = self.selected_operations[-1]
+                younger_transaction = self.selected_operations[-1]
                 older_transaction = self.selected_operations[-2]
-                self.message_display.insert(tk.END, f"{recent_transaction} awaits\n")
-                self.message_display.insert(tk.END, f"{older_transaction} finishes\n")
-                self.save_to_log_disk()
-                self.selected_operations = []
-                self.update_display()
-            elif protocol == "Wound-Lock":
-                self.message_display.delete(1.0, tk.END)
-                self.message_display.insert(tk.END, "Wound-Lock protocol selected\n")
-                first_transaction = self.selected_operations[0]
-                last_transaction = self.selected_operations[-1]
-                self.message_display.insert(tk.END, f"{first_transaction} awaits\n")
-                self.message_display.insert(tk.END, f"{last_transaction} finishes\n")
-                self.save_to_log_disk()
-                self.selected_operations = []
-                self.update_display()
+                self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} waits (younger)\n")
+                self.handle_wait_die(younger_transaction, older_transaction)
+            elif protocol == "Wound-Wait":
+                self.message_display.insert(tk.END, "Wound-Wait protocol selected\n")
+                older_transaction = self.selected_operations[0]
+                younger_transaction = self.selected_operations[-1]
+                self.protocol_behavior_display.insert(tk.END, f"{older_transaction} waits (older)\n")
+                self.handle_wound_wait(older_transaction, younger_transaction)
         else:
             self.log_disk.insert(tk.END, "Committed Transactions:\n")
             for transaction in self.selected_operations:
                 self.log_disk.insert(tk.END, f"{transaction}:\n")
                 for operation in next(item['operations'] for item in self.transactions if item["name"] == transaction):
                     self.log_disk.insert(tk.END, f" - {operation}\n")
+                    self.protocol_behavior_display.insert(tk.END, f"{transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
+                    self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {transaction}\n")
                 self.log_disk.insert(tk.END, "\n")
             self.selected_operations = []
             self.update_display()
-
-        if not deadlock_detected:
-            self.message_display.delete(1.0, tk.END)
             self.message_display.insert(tk.END, "No deadlock detected, transactions committed normally\n")
+
+    def handle_wait_die(self, younger_transaction, older_transaction):
+        held_items = self.get_held_items(older_transaction)
+        for item in held_items:
+            self.protocol_behavior_display.insert(tk.END, f"{older_transaction} releasing lock on {item}\n")
+        self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} continues after {older_transaction} releases {item}\n")
+        for operation in next(item['operations'] for item in self.transactions if item["name"] == younger_transaction):
+            self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
+            self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {younger_transaction}\n")
+
+    def handle_wound_wait(self, older_transaction, younger_transaction):
+        held_items = self.get_held_items(younger_transaction)
+        for item in held_items:
+            self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} releasing lock on {item}\n")
+        self.protocol_behavior_display.insert(tk.END, f"{older_transaction} continues after {younger_transaction} releases {item}\n")
+        for operation in next(item['operations'] for item in self.transactions if item["name"] == older_transaction):
+            self.protocol_behavior_display.insert(tk.END, f"{older_transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
+            self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {older_transaction}\n")
+
+    def get_held_items(self, transaction):
+        operations = next(item['operations'] for item in self.transactions if item["name"] == transaction)
+        return [operation.split()[1] for operation in operations]
 
     def detect_deadlock(self):
         for transaction1 in self.selected_operations:
@@ -188,16 +207,14 @@ class TransactionUI:
                                 return True
         return False
 
-    def save_to_log_disk(self):
-        self.log_disk.insert(tk.END, "Committed Transactions:\n")
-        for transaction in self.selected_operations:
-            self.log_disk.insert(tk.END, f"{transaction}:\n")
-            for operation in next(item['operations'] for item in self.transactions if item["name"] == transaction):
-                self.log_disk.insert(tk.END, f" - {operation}\n")
-            self.log_disk.insert(tk.END, "\n")
+    def clear_display(self):
+        self.message_display.delete(1.0, tk.END)
+        self.protocol_behavior_display.delete(1.0, tk.END)
+        self.log_memory.delete(1.0, tk.END)
+        self.log_disk.delete(1.0, tk.END)
+        self.selected_operations = []
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = TransactionUI(root)
     root.mainloop()
-
