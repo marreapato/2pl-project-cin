@@ -8,21 +8,21 @@ class TransactionUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Transaction UI")
-        self.root.geometry("900x700")
+        self.root.geometry("900x700")  # Increased window size to accommodate new display
 
         # Define colors
         self.primary_color = "#3498db"
         self.secondary_color = "#2ecc71"
         self.text_color = "#ffffff"
-        self.frame_color = "#e74c3c"
+        self.frame_color = "#e74c3c"  # Modern color for the frame
 
         # Load logo from web
-        logo_url = "https://portal.cin.ufpe.br/wp-content/uploads/2023/06/selo_oficial_6.png"
+        logo_url = "https://portal.cin.ufpe.br/wp-content/uploads/2023/06/selo_oficial_6.png"  # Replace with your logo URL
         response = requests.get(logo_url)
         image = Image.open(BytesIO(response.content))
 
         # Resize the image to a smaller size
-        width, height = 100, 100
+        width, height = 100, 100  # Change these values to the desired dimensions
         resized_image = image.resize((width, height))
 
         self.logo = ImageTk.PhotoImage(resized_image)
@@ -141,7 +141,7 @@ class TransactionUI:
     def commit_transactions(self):
         protocol = self.selected_protocol.get()
         deadlock_detected = self.detect_deadlock()
-
+        
         self.message_display.delete(1.0, tk.END)
         self.protocol_behavior_display.delete(1.0, tk.END)
 
@@ -150,68 +150,57 @@ class TransactionUI:
                 self.message_display.insert(tk.END, "Wait-Die protocol selected\n")
                 younger_transaction = self.selected_operations[-1]
                 older_transaction = self.selected_operations[-2]
-                self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} waits (younger)\n")
-                self.handle_wait_die(younger_transaction, older_transaction)
+                self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} aborted and rolled back (younger)\n")
+                for operation in next(item['operations'] for item in self.transactions if item["name"] == younger_transaction):
+                    self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {younger_transaction}\n")
+                self.protocol_behavior_display.insert(tk.END, f"{older_transaction} continues (older)\n")
+                self.selected_operations = [older_transaction]
+                self.show_protocol_behavior(older_transaction, wait_die=True)
             elif protocol == "Wound-Wait":
                 self.message_display.insert(tk.END, "Wound-Wait protocol selected\n")
                 older_transaction = self.selected_operations[0]
                 younger_transaction = self.selected_operations[-1]
                 self.protocol_behavior_display.insert(tk.END, f"{older_transaction} waits (older)\n")
-                self.handle_wound_wait(older_transaction, younger_transaction)
+                self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} continues (younger)\n")
+                self.show_protocol_behavior(younger_transaction)
+                self.show_protocol_behavior(older_transaction, wait_die=False, continue_after_younger=True)
         else:
             self.log_disk.insert(tk.END, "Committed Transactions:\n")
             for transaction in self.selected_operations:
                 self.log_disk.insert(tk.END, f"{transaction}:\n")
                 for operation in next(item['operations'] for item in self.transactions if item["name"] == transaction):
                     self.log_disk.insert(tk.END, f" - {operation}\n")
-                    self.protocol_behavior_display.insert(tk.END, f"{transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
-                    self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {transaction}\n")
                 self.log_disk.insert(tk.END, "\n")
-            self.selected_operations = []
-            self.update_display()
-            self.message_display.insert(tk.END, "No deadlock detected, transactions committed normally\n")
 
-    def handle_wait_die(self, younger_transaction, older_transaction):
-        held_items = self.get_held_items(older_transaction)
-        for item in held_items:
-            self.protocol_behavior_display.insert(tk.END, f"{older_transaction} releasing lock on {item}\n")
-        self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} continues after {older_transaction} releases {item}\n")
-        for operation in next(item['operations'] for item in self.transactions if item["name"] == younger_transaction):
-            self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
-            self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {younger_transaction}\n")
-
-    def handle_wound_wait(self, older_transaction, younger_transaction):
-        held_items = self.get_held_items(younger_transaction)
-        for item in held_items:
-            self.protocol_behavior_display.insert(tk.END, f"{younger_transaction} releasing lock on {item}\n")
-        self.protocol_behavior_display.insert(tk.END, f"{older_transaction} continues after {younger_transaction} releases {item}\n")
-        for operation in next(item['operations'] for item in self.transactions if item["name"] == older_transaction):
-            self.protocol_behavior_display.insert(tk.END, f"{older_transaction} {operation.split()[0].lower()}ing {operation.split()[1]}\n")
-            self.protocol_behavior_display.insert(tk.END, f"Releasing lock on {operation.split()[1]} by {older_transaction}\n")
-
-    def get_held_items(self, transaction):
-        operations = next(item['operations'] for item in self.transactions if item["name"] == transaction)
-        return [operation.split()[1] for operation in operations]
+    def show_protocol_behavior(self, transaction, wait_die=False, continue_after_younger=False):
+        for operation in next(item['operations'] for item in self.transactions if item["name"] == transaction):
+            action, item = operation.split()
+            if wait_die and action == "Write":
+                self.protocol_behavior_display.insert(tk.END, f"{transaction} writing {item} (lock acquired)\n")
+            else:
+                self.protocol_behavior_display.insert(tk.END, f"{transaction} {action.lower()}ing {item}\n")
+            if continue_after_younger:
+                self.protocol_behavior_display.insert(tk.END, f"{transaction} continues after lock on {item} is released\n")
+                continue_after_younger = False  # Reset the flag after one use
 
     def detect_deadlock(self):
-        for transaction1 in self.selected_operations:
-            for transaction2 in self.selected_operations:
-                if transaction1 != transaction2:
-                    operations1 = next(item['operations'] for item in self.transactions if item["name"] == transaction1)
-                    operations2 = next(item['operations'] for item in self.transactions if item["name"] == transaction2)
-                    for operation1 in operations1:
-                        for operation2 in operations2:
-                            item1 = operation1.split()[1]
-                            item2 = operation2.split()[1]
-                            if item1 == item2:
-                                return True
+        if len(self.selected_operations) < 2:
+            return False
+        transaction1_ops = next(item['operations'] for item in self.transactions if item["name"] == self.selected_operations[0])
+        transaction2_ops = next(item['operations'] for item in self.transactions if item["name"] == self.selected_operations[1])
+        for op1 in transaction1_ops:
+            action1, item1 = op1.split()
+            for op2 in transaction2_ops:
+                action2, item2 = op2.split()
+                if item1 == item2:
+                    return True
         return False
 
     def clear_display(self):
         self.message_display.delete(1.0, tk.END)
-        self.protocol_behavior_display.delete(1.0, tk.END)
         self.log_memory.delete(1.0, tk.END)
         self.log_disk.delete(1.0, tk.END)
+        self.protocol_behavior_display.delete(1.0, tk.END)
         self.selected_operations = []
 
 if __name__ == "__main__":
